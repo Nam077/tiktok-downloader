@@ -1,0 +1,33 @@
+{
+  "name": "tiktok-downloader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "bin": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack --mode production",
+    "dev": "ts-node src/main.ts",
+    "pkg": "npm run build && pkg ./dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@inquirer/prompts": "^3.2.0",
+    "@inquirer/select": "^1.3.0",
+    "@types/inquirer": "^9.0.6",
+    "@types/progress": "^2.0.6",
+    "axios": "^1.4.0",
+    "cheerio": "^1.0.0-rc.12",
+    "inquirer": "^9.2.11"
+  },
+  "devDependencies": {
+    "install": "^0.13.0",
+    "pkg": "^5.8.1",
+    "ts-loader": "^9.4.4",
+    "typescript": "^5.1.6",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  }
+}
