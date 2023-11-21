@@ -20,7 +20,8 @@
     "@types/progress": "^2.0.6",
     "axios": "^1.4.0",
     "cheerio": "^1.0.0-rc.12",
-    "inquirer": "^9.2.11"
+    "inquirer": "^9.2.11",
+    "yt-dlp-wrap-plus": "^2.3.18"
   },
   "devDependencies": {
     "install": "^0.13.0",
