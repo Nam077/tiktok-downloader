@@ -4,6 +4,7 @@ import axios, {AxiosResponse} from 'axios';
 import select from '@inquirer/select';
 import input from '@inquirer/input';
 import ProgressBar from 'progress';
+import slugify from 'slugify';
 
 const folderDownload = './downloads';
 
@@ -31,6 +32,7 @@ interface VideoLink {
     q: string;
     q_text: string;
     k: string;
+    url?: string;
 }
 
 interface RelatedVideo {
@@ -62,7 +64,6 @@ if (!fs.existsSync(folderDownload)) {
     fs.mkdirSync(folderDownload);
 }
 const extractOriginalFilename = (encodedString: string): string | null => {
-
     return decodeURIComponent(encodedString.trim()).replaceAll("; filename*", '').replaceAll('%20', ' ').replace("y2mate.com - ", '').replaceAll('"', '').replace('ssstik.io_', '')
 
 }
@@ -70,8 +71,13 @@ const downloadFile = async (url: string): Promise<void> => {
     return new Promise(async (resolve, reject) => {
         try {
             const response: AxiosResponse = await axios.get(url, {responseType: 'stream'});
-            let filename = response.headers['content-disposition'].split('=')[1];
-            filename = extractOriginalFilename(filename);
+            const regex: RegExp = /\/([^/?]+\.(\w+))(\?|$)/;
+            const match: RegExpExecArray | null = regex.exec(url);
+            let filename = match ? match[1] : '';
+            if (response.headers['content-disposition']) {
+                filename = response.headers['content-disposition'].split('=')[1];
+                filename = extractOriginalFilename(filename) ?? filename;
+            }
             const contentLength = response.headers['content-length'];
             let downloadedBytes = 0;
             const progressBar = new ProgressBar('Downloading [:bar] :rate/Mb    :percent :etas', {
@@ -109,6 +115,87 @@ const downloadFile = async (url: string): Promise<void> => {
     });
 }
 
+interface FaceBookDownload {
+    title: string;
+    duration: string;
+    thumbnail: string;
+    links: any[];
+}
+
+class X2MateAPI {
+    private readonly apiUrl: string = "https://x2mate.com/api/ajaxSearch";
+    private _url = ''
+
+    get url(): string {
+        return this._url;
+    }
+
+    set url(value: string) {
+        this._url = value;
+    }
+
+    async fetchVideo(): Promise<null | FaceBookDownload> {
+        try {
+            const requestBody = `q=${encodeURIComponent(this.url)}&vt=home`;
+
+            const response: AxiosResponse<any> = await axios.post(this.apiUrl, requestBody, {
+                headers: {
+                    "accept": "*/*",
+                    "accept-language": "vi,en-US;q=0.9,en;q=0.8",
+                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "sec-ch-ua": "\"Chromium\";v=\"116\", \"Not)A;Brand\";v=\"24\", \"YaBrowser\";v=\"23\"",
+                    "sec-ch-ua-mobile": "?0",
+                    "sec-ch-ua-platform": "\"Windows\"",
+                    "sec-fetch-dest": "empty",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-site": "same-origin",
+                    "x-requested-with": "XMLHttpRequest",
+                    "cookie": ".AspNetCore.Culture=c%3Den%7Cuic%3Den; .AspNetCore.Antiforgery.w9l6cVXihDo=CfDJ8JQ6kw6hphNOgwIcdl-D-Q0xoSZN9e-k-0x16_60Mk0PWGP5oMe6qJVoc2TGLkpQdeK0X8EUfu4QspXFBsdngb7xOY9fDH-x13-u3ysledHi24U3lNBIEZgf0AqINhB0YG0tkM0-tVcK-GFq09putq8",
+                    "Referer": "https://x2mate.com/en78",
+                    "Referrer-Policy": "strict-origin-when-cross-origin"
+                }
+            });
+            return {
+                title: response.data.title,
+                duration: response.data.duration,
+                thumbnail: response.data.thumbnail,
+                links: response.data.links
+            }
+            // Handle the response data here
+        } catch (error) {
+            return null
+        }
+    }
+
+    async runDownload(): Promise<void> {
+        const data = await this.fetchVideo();
+        console.log(data)
+        if (data) {
+            let choices: any = [];
+            let index = 1;
+            for (const key in data.links) {
+                choices.push({
+                    name: `${index}. ${data.title} - ${key}`,
+                    value: data.links[key],
+                });
+                index++;
+            }
+            while (true) {
+                const optionPick = await select({
+                    message: 'Select option',
+                    choices: [...choices, {
+                        name: 'Cancel',
+                        value: null,
+                    }],
+                });
+                if (optionPick === null) {
+                    break;
+                }
+                await downloadFile(optionPick as string)
+            }
+        }
+    }
+}
 
 class YoutubeDownloader {
     private readonly baseUrlSearch = 'https://www.y2mate.com/mates/vi751/analyzeV2/ajax';
@@ -150,17 +237,25 @@ class YoutubeDownloader {
     }
 
 
-    async fetchY2MateData(): Promise<VideoData & { link_all: any } | null> {
+    async fetchY2MateData(k_page = 'mp3'): Promise<VideoData & { link_all: any } | null> {
         const requestData = {
             k_query: this.url,
-            'k_page': 'mp3',
+            k_page: k_page
         };
-
         try {
             const response: AxiosResponse = await axios.post(this.baseUrlSearch, new URLSearchParams(requestData).toString(), {
                 headers: this.headers
             });
             if (response.status === 200) {
+                if (response.data.links.video) {
+                    return {
+                        ...response.data,
+                        links: {
+                            mp4: Object.values(response.data.links.video),
+                        },
+                        link_all: [...Object.values(response.data.links.video)]
+                    };
+                }
                 return {
                     ...response.data,
                     links: {
@@ -169,8 +264,8 @@ class YoutubeDownloader {
                         other: Object.values(response.data.links.other)
                     },
                     link_all: [...Object.values(response.data.links.mp4), ...Object.values(response.data.links.mp3), ...Object.values(response.data.links.other)]
+                };
 
-                }
             }
             return null;
         } catch (error) {
@@ -199,7 +294,7 @@ class YoutubeDownloader {
     }
 
 
-    async runDownloader(): Promise<void> {
+    async runDownloader(): Promise<void | number> {
         const data = await this.fetchY2MateData();
         if (data) {
             let choices: any = [];
@@ -213,11 +308,10 @@ class YoutubeDownloader {
                 const optionPick = await select({
                     message: 'Select option',
                     choices: [...choices, {
-                        name: '> Cancel',
+                        name: 'Cancel',
                         value: null,
                     }],
                 });
-
                 this.optionPick = optionPick as VideoLink;
                 if (!optionPick) {
                     break;
@@ -227,6 +321,31 @@ class YoutubeDownloader {
         }
     }
 
+    async runDownloaderAnother(): Promise<void | number> {
+        const data = await this.fetchY2MateData('Instagram');
+        if (data) {
+            let choices: any = [];
+            for (let i = 0; i < data.link_all.length; i++) {
+                choices.push({
+                    name: ` ${i}. ${data.link_all[i].f} > ${data.title} - ${data.link_all[i].q_text} `,
+                    value: data.link_all[i].url,
+                });
+            }
+            while (true) {
+                const optionPick = await select({
+                    message: 'Select option',
+                    choices: [...choices, {
+                        name: 'Cancel',
+                        value: null,
+                    }],
+                });
+                if (!optionPick) {
+                    break;
+                }
+                await downloadFile(optionPick as string);
+            }
+        }
+    }
 }
 
 
@@ -318,12 +437,29 @@ function isYoutubeUrl(url: string): boolean {
 const isTikTokUrl = (url: string) => {
     return url.includes('tiktok.com');
 }
-const enterUrl = async (): Promise<{ url: string; type: 'tiktok' | 'youtube' | 'exit' }> => {
+
+const isInstagramUrl = (url: string) => {
+    return url.includes('instagram.com');
+}
+
+const isFacebookUrl = (url: string) => {
+    return url.includes('facebook.com' || 'm.facebook.com' || 'fb.com');
+}
+
+const isTwitterUrl = (url: string) => {
+    return url.includes('twitter.com');
+}
+const enterUrl = async (): Promise<{ url: string; type: 'tiktok' | 'youtube' | 'exit' | 'facebook' | 'another' }> => {
+
     const url = await input({message: 'Enter link you want to download (q to exit): '});
     if (isTikTokUrl(url)) {
         return {url, type: 'tiktok'};
     } else if (isYoutubeUrl(url)) {
         return {url, type: 'youtube'};
+    } else if (isFacebookUrl(url)) {
+        return {url, type: 'facebook'}
+    } else if (isInstagramUrl(url) || isTwitterUrl(url)) {
+        return {url, type: 'another'}
     } else {
         return enterUrl()
     }
@@ -339,6 +475,7 @@ const mainMain = async () => {
         '╚═╝░░╚══╝╚═╝░░╚═╝╚═╝░░░░░╚═╝░╚════╝░░░╚═╝░░░░░╚═╝░░░')
     const tiktokDownloader = new TiktokDownloader();
     const youtubeDownloader = new YoutubeDownloader();
+    const x2MateAPI: X2MateAPI = new X2MateAPI();
     let exit = true;
     while (exit) {
         const {url, type} = await enterUrl();
@@ -348,7 +485,12 @@ const mainMain = async () => {
         } else if (type === 'youtube') {
             youtubeDownloader.url = url;
             await youtubeDownloader.runDownloader();
-
+        } else if (type === 'facebook') {
+            x2MateAPI.url = url;
+            await x2MateAPI.runDownload()
+        } else if (type === 'another') {
+            youtubeDownloader.url = url;
+            await youtubeDownloader.runDownloaderAnother()
         } else {
             exit = false;
         }

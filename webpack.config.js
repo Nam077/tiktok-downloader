@@ -15,7 +15,7 @@ module.exports = {
     extensions: ['.tsx', '.ts', '.js'],
   },
   output: {
-    filename: 'index.js',
+    filename: 'downloader.js',
     path: path.resolve(__dirname, 'dist'),
   },
   "target": "node",
